@@ -18,7 +18,7 @@ read_json_file = (file_path) ->
   try
     json = JSON.parse(contents)
   catch e
-    console.log 'unable to parse #{file_path} as JSON:'
+    console.log "unable to parse #{file_path} as JSON:"
     console.log e
     process.exit 1
   json
@@ -47,15 +47,13 @@ _set_saucelabs_test_data = (config, jobid, data, cb) ->
   body = new Buffer(JSON.stringify(data))
 
   http_requests_without_response++
-  console.log 'Sending request'
   req = http.request(
     {
       hostname: 'saucelabs.com'
       port: 80
-      path: '/rest/v1/#{config.username}/jobs/#{jobid}'
+      path: "/rest/v1/#{config.username}/jobs/#{jobid}"
       method: 'PUT'
       auth: config.username + ':' + config.apikey
-      tags: [process.env.TRAVIS_JOB_NUMBER]
       headers:
         'Content-length': body.length
     },
@@ -199,12 +197,14 @@ run_tests_on_browser = (run, browser_capabilities) ->
         hasRunning = browser.hasElementByCssSelector('.running')
         hasFailed = browser.hasElementByCssSelector('.failed')
         hasPassed = browser.hasElementByCssSelector('.succeeded')
+        hasPassedOnClient = _.some browser.elementsByCssSelector('.succeeded'), (element) ->
+          (element.text().search 'C: ') >= 0
 
-        if not hasRunning and not hasFailed and hasPassed
+        if not hasRunning and not hasFailed and hasPassedOnClient
           status: 'pass'
           passedCount: browser.elementsByCssSelector('.succeeded').length
           failedCount: 0
-        else if not hasRunning and (hasFailed or not hasPassed)
+        else if not hasRunning and (hasFailed or not hasPassedOnClient)
           status: 'fail'
           passedCount: browser.elementsByCssSelector('.succeeded')?.length or 0
           failedCount: browser.elementsByCssSelector('.failed')?.length or 0
@@ -223,12 +223,12 @@ run_tests_on_browser = (run, browser_capabilities) ->
       log 'err', e
       # Do not continue testing if error occurs. Do not try to set status because it will fail as well.
       browsers_errored++
-      done.reject()
+      done.reject e
       return
 
     try
       browser.window mainWindowHandle
-      clientlog = browser.eval '$('#log').text()'
+      clientlog = browser.eval "$('#log').text()"
       log 'clientlog', clientlog
     catch e
       log 'unable to capture client log:'
@@ -267,7 +267,7 @@ run_tests_on_browser = (run, browser_capabilities) ->
       done.resolve 0
     else
       browsers_errored++
-      done.reject()
+      done.reject new Error 'Browser test errored on SauceLabs'
 
   done.promise
 
