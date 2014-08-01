@@ -279,10 +279,12 @@ gen_task = (browser_caps) ->
   thisrun = run + ':'
   -> run_tests_on_browser thisrun, browser_caps
 
+single_group_timeout = 60 * 1000 # ms
+
 run_browsers_in_parallel = (group) ->
   tasks = _.map(group, gen_task)
   ->
-    parallel(tasks).then (result) ->
+    parallel(tasks).timeout(single_group_timeout, 'WARNING: Browser timeout, skipping test').then (result) ->
       _.every result
     ,
       (error) ->
