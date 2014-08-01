@@ -52,6 +52,7 @@ _set_saucelabs_test_data = (config, jobid, data, cb) ->
       path: "/rest/v1/#{config.username}/jobs/#{jobid}"
       method: 'PUT'
       auth: config.username + ':' + config.apikey
+      tags: [process.env.TRAVIS_JOB_NUMBER]
       headers:
         'Content-length': body.length
     },
@@ -217,7 +218,9 @@ run_tests_on_browser = (run, browser_capabilities) ->
     catch e
       log e['jsonwire-error'] if e['jsonwire-error']?
       log 'err', e
-      test_status = 'error'
+      # Do not continue testing if error occurs. Do not try to set status because it will fail as well.
+      done.reject()
+      return
 
     try
       browser.window mainWindowHandle
