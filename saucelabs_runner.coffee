@@ -9,13 +9,16 @@ sequence  = require 'when/sequence'
 
 http_requests_without_response = 0
 exit_status = null
+browsers_passed = 0
+browsers_failed = 0
+browsers_errored = 0
 
 read_json_file = (file_path) ->
   contents = fs.readFileSync file_path, 'utf-8'
   try
     json = JSON.parse(contents)
   catch e
-    console.log "unable to parse #{file_path} as JSON:"
+    console.log 'unable to parse #{file_path} as JSON:'
     console.log e
     process.exit 1
   json
@@ -44,12 +47,12 @@ _set_saucelabs_test_data = (config, jobid, data, cb) ->
   body = new Buffer(JSON.stringify(data))
 
   http_requests_without_response++
-  console.log "Sending request"
+  console.log 'Sending request'
   req = http.request(
     {
       hostname: 'saucelabs.com'
       port: 80
-      path: "/rest/v1/#{config.username}/jobs/#{jobid}"
+      path: '/rest/v1/#{config.username}/jobs/#{jobid}'
       method: 'PUT'
       auth: config.username + ':' + config.apikey
       tags: [process.env.TRAVIS_JOB_NUMBER]
@@ -92,7 +95,7 @@ create_client = ->
     wd_sync.remote(test_config.selenium_server[0], test_config.selenium_server[1])
   else if test_config.where is 'saucelabs'
     wd_sync.remote(
-      "ondemand.saucelabs.com",
+      'ondemand.saucelabs.com',
       80,
       sauce_key.username,
       sauce_key.apikey
@@ -156,7 +159,7 @@ run_tests_on_browser = (run, browser_capabilities) ->
     session_id = null
     try
       session_id = browser.init capabilities
-      browser.setImplicitWaitTimeout 1000
+      browser.setImplicitWaitTimeout 5000
 
       windowHandles = browser.windowHandles()
       if windowHandles.length isnt 1
@@ -219,12 +222,13 @@ run_tests_on_browser = (run, browser_capabilities) ->
       log e['jsonwire-error'] if e['jsonwire-error']?
       log 'err', e
       # Do not continue testing if error occurs. Do not try to set status because it will fail as well.
+      browsers_errored++
       done.reject()
       return
 
     try
       browser.window mainWindowHandle
-      clientlog = browser.eval '$("#log").text()'
+      clientlog = browser.eval '$('#log').text()'
       log 'clientlog', clientlog
     catch e
       log 'unable to capture client log:'
@@ -254,11 +258,15 @@ run_tests_on_browser = (run, browser_capabilities) ->
       .otherwise((reason) ->
         console.log run, 'failed to set test status at saucelabs:', reason
       )
+
     if test_status?.status is 'pass'
+      browsers_passed++
       done.resolve 1
     else if test_status?.status is 'fail'
+      browsers_failed++
       done.resolve 0
     else
+      browsers_errored++
       done.reject()
 
   done.promise
@@ -291,13 +299,18 @@ run_browsers_in_parallel = (group) ->
       _.every result
     ,
       (error) ->
-        console.log "Browser test error: " + error
+        console.log 'Browser test error: ' + error
         error
 
 run_groups_in_sequence = (groups) ->
   tasks = _.map(groups, run_browsers_in_parallel)
   sequence(tasks).then (result) ->
     result = _.every result
+    console.log '\n\n------ STATISTICS ------'
+    console.log 'Browsers passed:  ' + browsers_passed
+    console.log 'Browsers failed:  ' + browsers_failed
+    console.log 'Browsers errored: ' + browsers_errored
+    console.log '----------------------------\n\n'
     if result
       exit_status = 0
       exitIfFinished()
@@ -306,7 +319,7 @@ run_groups_in_sequence = (groups) ->
       exitIfFinished()
   ,
     (error) ->
-      console.log "Browser test error: " + error
+      console.log 'Browser test error: ' + error
       exit_status = 2
       exitIfFinished()
 
@@ -316,5 +329,5 @@ run_groups_in_sequence(group(number_of_tests_to_run_in_parallel, test_config.bro
 
 exitIfFinished = ->
   return if http_requests_without_response or exit_status is null
-  console.log "Exiting with status " + exit_status
+  console.log 'Exiting with status ' + exit_status
   process.exit exit_status
