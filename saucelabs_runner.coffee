@@ -307,7 +307,7 @@ run_groups_in_sequence = (groups) ->
   tasks = _.map(groups, run_browsers_in_parallel)
   sequence(tasks).then (result) ->
     result = _.every result
-    console.log '\n\n------ STATISTICS ------'
+    console.log '\n\n-------- STATISTICS --------'
     console.log 'Browsers passed:  ' + browsers_passed
     console.log 'Browsers failed:  ' + browsers_failed
     console.log 'Browsers errored: ' + browsers_errored
