@@ -157,7 +157,8 @@ run_tests_on_browser = (run, browser_capabilities) ->
     session_id = null
     try
       session_id = browser.init capabilities
-      browser.setImplicitWaitTimeout 5000
+      browser.setImplicitWaitTimeout 1000
+      browser.setWaitTimeout 3000
 
       windowHandles = browser.windowHandles()
       if windowHandles.length isnt 1
