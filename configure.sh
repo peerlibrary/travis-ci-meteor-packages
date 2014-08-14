@@ -8,10 +8,10 @@ wget --no-cache https://raw.github.com/peerlibrary/travis-ci-meteor-packages/sau
 wget --no-cache https://raw.github.com/peerlibrary/travis-ci-meteor-packages/saucelabs/package.json
 wget --no-cache https://raw.github.com/peerlibrary/travis-ci-meteor-packages/saucelabs/start_test.coffee
 
-wget --no-cache https://raw.github.com/peerlibrary/travis-ci-meteor-packages/saucelabs/test_scripts/phantom_runner.js -O .test_scripts/phantom_wrapper.coffee
+wget --no-cache https://raw.github.com/peerlibrary/travis-ci-meteor-packages/saucelabs/test_scripts/phantom_wrapper.coffee -O .test_scripts/phantom_wrapper.coffee
 wget --no-cache https://raw.github.com/peerlibrary/travis-ci-meteor-packages/saucelabs/test_scripts/phantom_runner.js -O .test_scripts/phantom_runner.js
-wget --no-cache https://raw.github.com/peerlibrary/travis-ci-meteor-packages/saucelabs/test_scripts/saucelabs_runner.coffee -O .test_scripts/saucelabs_wrapper.coffee
-wget --no-cache https://raw.github.com/peerlibrary/travis-ci-meteor-packages/saucelabs/test_scripts/phantom_runner.js -O .test_scripts/saucelabs_runner.coffee
+wget --no-cache https://raw.github.com/peerlibrary/travis-ci-meteor-packages/saucelabs/test_scripts/saucelabs_wrapper.coffee -O .test_scripts/saucelabs_wrapper.coffee
+wget --no-cache https://raw.github.com/peerlibrary/travis-ci-meteor-packages/saucelabs/test_scripts/saucelabs_runner.coffee -O .test_scripts/saucelabs_runner.coffee
 
 #installing meteor
 curl https://install.meteor.com | /bin/sh
