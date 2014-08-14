@@ -204,12 +204,14 @@ run_tests_on_browser = (run, browser_capabilities) ->
         hasPassed = browser.hasElementByCssSelector('.succeeded')
         hasPassedOnClient = _.some browser.elementsByCssSelector('.succeeded'), (element) ->
           (element.text().search 'C: ') >= 0
+        hasPassedOnServer = _.some browser.elementsByCssSelector('.succeeded'), (element) ->
+          (element.text().search 'S: ') >= 0
 
-        if not hasRunning and not hasFailed and hasPassedOnClient
+        if not hasRunning and not hasFailed and hasPassedOnClient and hasPassedOnServer
           status: 'pass'
           passedCount: browser.elementsByCssSelector('.succeeded').length
           failedCount: 0
-        else if not hasRunning and (hasFailed or not hasPassedOnClient)
+        else if not hasRunning and (hasFailed or not hasPassedOnClient or not hasPassedOnServer)
           status: 'fail'
           passedCount: browser.elementsByCssSelector('.succeeded')?.length or 0
           failedCount: browser.elementsByCssSelector('.failed')?.length or 0
