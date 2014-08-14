@@ -23,6 +23,13 @@ read_json_file = (file_path) ->
     process.exit 1
   json
 
+unless process.env.SAUCE_USERNAME and process.env.SAUCE_ACCESS_KEY
+  console.log 'SAUCE_USERNAME and SAUCE_ACCESS_KEY environment variables are required'
+  process.exit 1
+sauce_key =
+  username: process.env.SAUCE_USERNAME
+  apikey: process.env.SAUCE_ACCESS_KEY
+
 test_config_file = process.argv[2]
 unless test_config_file?
   console.log 'specify the saucelabs test config JSON file on the command line'
@@ -33,15 +40,6 @@ url = process.argv[3]
 unless url?
   console.log 'specify the Meteor tinytest application URL'
   process.exit 1
-
-if fs.existsSync('saucelabs_key.json')
-  saucelabs_key_file = 'saucelabs_key.json'
-else if process.env.HOME? and fs.existsSync(process.env.HOME + '/saucelabs_key.json')
-  saucelabs_key_file = process.env.HOME + '/saucelabs_key.json'
-else
-  console.log 'need a saucelabs_key.json file'
-  process.exit 1
-sauce_key = read_json_file saucelabs_key_file
 
 _set_saucelabs_test_data = (config, jobid, data, cb) ->
   body = new Buffer(JSON.stringify(data))
@@ -306,8 +304,9 @@ run_browsers_in_parallel = (group) ->
 run_groups_in_sequence = (groups) ->
   tasks = _.map(groups, run_browsers_in_parallel)
   sequence(tasks).then (result) ->
-    result = _.every result
+    result = _.every result, (e) -> e is true
     console.log '\n\n-------- STATISTICS --------'
+    console.log 'Total browsers:   ' + test_config.browsers.length
     console.log 'Browsers passed:  ' + browsers_passed
     console.log 'Browsers failed:  ' + browsers_failed
     console.log 'Browsers errored: ' + browsers_errored
