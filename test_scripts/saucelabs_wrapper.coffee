@@ -1,10 +1,6 @@
 #!/usr/bin/env coffee
 console.log "\n\nStarting SauceLabs test script"
 
-if process.env.SKIP_SAUCELABS_TEST?
-  console.log "SKIP_SAUCELABS_TEST flag is up, skipping SauceLabs testing"
-  process.exit 0
-
 spawn = require('child_process').spawn
 
 workingDir = process.env.WORKING_DIR or process.env.PACKAGE_DIR or './'

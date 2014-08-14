@@ -4,8 +4,18 @@ _ = require 'underscore'
 _when = require 'when'
 sequence = require 'when/sequence'
 
-TEST_SCRIPTS = ['phantom_wrapper.coffee', 'saucelabs_wrapper.coffee']
+# Default values for environment variables
 process.env.TEST_SCRIPTS_DIR = './.test_scripts' unless process.env.TEST_SCRIPTS_DIR?
+process.env.TEST_ON_PHANTOMJS = '1' unless process.env.TEST_ON_PHANTOMJS?
+process.env.TEST_ON_SAUCELABS = '0' unless process.env.TEST_ON_SAUCELABS?
+
+testsToRun = [
+  script: 'phantom_wrapper.coffee'
+  enabled: process.env.TEST_ON_PHANTOMJS is '1'
+,
+  script: 'saucelabs_wrapper.coffee'
+  enabled: process.env.TEST_ON_SAUCELABS is '1'
+]
 
 start = (script) ->
   done = _when.defer()
@@ -28,7 +38,8 @@ genTask = (script) ->
   -> start "#{process.env.TEST_SCRIPTS_DIR}/#{script}"
 
 tasks = []
-tasks.push genTask script for script in TEST_SCRIPTS
+for test in testsToRun
+  tasks.push genTask test.script if test.enabled
 
 sequence(tasks).then (results) ->
   if _.every results
