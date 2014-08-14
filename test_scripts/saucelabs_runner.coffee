@@ -10,9 +10,15 @@ rerun     = require 'rerun'
 
 http_requests_without_response = 0
 exit_status = null
-browsers_passed = 0
-browsers_failed = 0
-browsers_errored = 0
+
+browser_list_by_status =
+  pass: []
+  fail: []
+  error: []
+
+set_browser_status = (status, run) ->
+  return if _.contains browser_list_by_status[status], run
+  browser_list_by_status[status].push run
 
 read_json_file = (file_path) ->
   contents = fs.readFileSync file_path, 'utf-8'
@@ -259,10 +265,10 @@ run_tests_on_browser = (run, browser_capabilities) ->
       )
 
     if test_status?.status is 'pass'
-      browsers_passed++
+      set_browser_status 'pass', run
       done.resolve 1
     else if test_status?.status is 'fail'
-      browsers_failed++
+      set_browser_status 'fail', run
       done.resolve 0
     else
       done.reject new Error 'Browser test errored on SauceLabs'
@@ -306,8 +312,13 @@ run_browsers_in_parallel = (group) ->
       _.every result, (e) -> e is true
     ,
       (error) ->
-        console.log 'Browser test error: ' + error
-        browsers_errored++
+        console.log "Browser test error: #{error}"
+        indexOfRun = error.toString()?.indexOf 'Run: '
+        if indexOfRun and indexOfRun >= 0
+          run = error.toString().substring indexOfRun + 'Run: '.length
+        else
+          run = 0
+        set_browser_status 'error', run
         error
 
 run_groups_in_sequence = (groups) ->
@@ -316,9 +327,9 @@ run_groups_in_sequence = (groups) ->
     result = _.every result, (e) -> e is true
     console.log '\n\n-------- STATISTICS --------'
     console.log 'Total browsers:   ' + test_config.browsers.length
-    console.log 'Browsers passed:  ' + browsers_passed
-    console.log 'Browsers failed:  ' + browsers_failed
-    console.log 'Browsers errored: ' + browsers_errored
+    console.log 'Browsers passed:  ' + browser_list_by_status.pass.length
+    console.log 'Browsers failed:  ' + browser_list_by_status.fail.length
+    console.log 'Browsers errored: ' + browser_list_by_status.error.length
     console.log '----------------------------\n\n'
     if result
       exit_status = 0
@@ -338,5 +349,5 @@ run_groups_in_sequence(group(number_of_tests_to_run_in_parallel, test_config.bro
 
 exitIfFinished = ->
   return if http_requests_without_response or exit_status is null
-  console.log 'Exiting with status ' + exit_status
+  console.log "Exiting with status #{exit_status}"
   process.exit exit_status
