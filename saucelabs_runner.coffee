@@ -6,6 +6,7 @@ wd_sync   = require 'wd-sync'
 _when     = require 'when'
 parallel  = require 'when/parallel'
 sequence  = require 'when/sequence'
+rerun     = require 'rerun'
 
 http_requests_without_response = 0
 exit_status = null
@@ -156,7 +157,6 @@ run_tests_on_browser = (run, browser_capabilities) ->
     try
       session_id = browser.init capabilities
       browser.setImplicitWaitTimeout 1000
-      browser.setWaitTimeout 3000
 
       windowHandles = browser.windowHandles()
       if windowHandles.length isnt 1
@@ -265,7 +265,6 @@ run_tests_on_browser = (run, browser_capabilities) ->
       browsers_failed++
       done.resolve 0
     else
-      browsers_errored++
       done.reject new Error 'Browser test errored on SauceLabs'
 
   done.promise
@@ -283,22 +282,32 @@ group = (n, array) ->
   result
 
 run = 0
+single_browser_timeout = 90 * 1000 # ms
 
+retry = rerun.promise
 gen_task = (browser_caps) ->
   ++run
   thisrun = run + ':'
-  -> run_tests_on_browser thisrun, browser_caps
-
-single_group_timeout = 60 * 1000 # ms
+  ->
+    tryCount = 0
+    retry ->
+      tryCount++
+      console.log "Try #{tryCount}"
+      run_tests_on_browser(thisrun, browser_caps).timeout(single_browser_timeout, "Browser timed out!")
+    ,
+      retries: 3
+      retryTimeout: 100 # ms
+      retryFactor: 1
 
 run_browsers_in_parallel = (group) ->
   tasks = _.map(group, gen_task)
   ->
-    parallel(tasks).timeout(single_group_timeout, 'WARNING: Browser timeout, skipping test').then (result) ->
-      _.every result
+    parallel(tasks).then (result) ->
+      _.every result, (e) -> e is true
     ,
       (error) ->
         console.log 'Browser test error: ' + error
+        browsers_errored++
         error
 
 run_groups_in_sequence = (groups) ->
