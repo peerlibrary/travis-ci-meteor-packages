@@ -17,7 +17,7 @@ else if (process.env.PACKAGES !== '') {
 }
 
 phantomjsClientArgs = ['./phantom_runner.js', 'http://localhost:10015'];
-sauceLabsClientArgs = ['./saucelabs_runner.coffee', 'saucelabs_config.json', 'http://localhost:3000'];
+sauceLabsClientArgs = ['./saucelabs_runner.coffee', '.saucelabs_config.json', 'http://localhost:3000'];
 
 runTests(phantomjsServerArgs, 'phantomjs', phantomjsClientArgs, function() {
   runTests(sauceLabsServerArgs, 'coffee', sauceLabsClientArgs, function() {
