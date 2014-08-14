@@ -229,8 +229,7 @@ run_tests_on_browser = (run, browser_capabilities) ->
       log e['jsonwire-error'] if e['jsonwire-error']?
       log 'err', e
       # Do not continue testing if error occurs. Do not try to set status because it will fail as well.
-      browsers_errored++
-      done.reject e
+      done.reject new rerun.RejectError e.message
       return
 
     try
@@ -273,7 +272,7 @@ run_tests_on_browser = (run, browser_capabilities) ->
       set_browser_status 'fail', run
       done.resolve 0
     else
-      done.reject new Error 'Browser test errored on SauceLabs'
+      done.reject new rerun.RejectError "Browser test errored on SauceLabs, Run: #{run}"
 
   done.promise
 
@@ -300,10 +299,10 @@ gen_task = (browser_caps) ->
     tryCount = 0
     retry ->
       tryCount++
-      console.log "Try #{tryCount}"
-      run_tests_on_browser(thisrun, browser_caps).timeout(single_browser_timeout, "Browser timed out!")
+      console.log "#{thisrun} Try #{tryCount}"
+      promise = run_tests_on_browser(thisrun, browser_caps).timeout(single_browser_timeout, "Browser timed out, Run: #{thisrun}")
     ,
-      retries: 3
+      retries: 2
       retryTimeout: 100 # ms
       retryFactor: 1
 
