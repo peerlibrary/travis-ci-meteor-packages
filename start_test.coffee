@@ -4,7 +4,7 @@ _ = require 'underscore'
 _when = require 'when'
 sequence = require 'when/sequence'
 
-TEST_SCRIPTS = ['phantomjs_test.coffee', 'saucelabs_test.coffee']
+TEST_SCRIPTS = ['phantom_wrapper.coffee', 'saucelabs_wrapper.coffee']
 process.env.TEST_SCRIPTS_DIR = './.test_scripts' unless process.env.TEST_SCRIPTS_DIR?
 
 start = (script) ->
