@@ -267,10 +267,10 @@ run_tests_on_browser = (run, browser_capabilities) ->
 
     if test_status?.status is 'pass'
       set_browser_status 'pass', run
-      done.resolve 1
+      done.resolve true
     else if test_status?.status is 'fail'
       set_browser_status 'fail', run
-      done.resolve 0
+      done.resolve false
     else
       done.reject new rerun.RejectError "Browser test errored on SauceLabs, Run: #{run}"
 
