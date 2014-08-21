@@ -2,6 +2,7 @@
 console.log "\n\nStarting SauceLabs test script"
 
 spawn = require('child_process').spawn
+exec = require('child_process').exec
 
 workingDir = process.env.WORKING_DIR or process.env.PACKAGE_DIR or './'
 console.log "workingDir is " + workingDir
@@ -36,5 +37,7 @@ runTestSuite = () ->
   clientProcess.stderr.pipe process.stderr
 
   clientProcess.on 'close', (code) ->
+    console.log "Stopping Meteor"
     meteor.kill 'SIGQUIT'
+    exec 'killall mongod'
     process.exit code
