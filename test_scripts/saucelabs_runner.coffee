@@ -7,6 +7,60 @@ _when     = require 'when'
 parallel  = require 'when/parallel'
 sequence  = require 'when/sequence'
 rerun     = require 'rerun'
+colors    = require 'colors'
+
+httpRequestsWithoutResponse = 0
+exitStatus = null
+passedBrowsersCount = 0
+failedBrowsersCount = 0
+erroredBrowsersCount = 0
+STATUS =
+  PASS: 'pass'
+  FAIL: 'fail'
+
+class BrowserTestMetaData
+  constructor: (run, browserCapabilities) ->
+    @run = run
+    @tryCount = 0
+    @browserName = browserCapabilities.browserName
+    @browserVersion = browserCapabilities.version
+    @platform = browserCapabilities.platform
+
+  getDescription: ->
+    return "#{@browserName} #{@browserVersion} on #{@platform}"
+
+  increaseTryCount: ->
+    @tryCount++
+
+  setStatus: (status) ->
+    return if @status
+    @status = status
+    if @status?.status is STATUS.PASS
+      passedBrowsersCount++
+    else if @status?.status is STATUS.FAIL
+      failedBrowsersCount++
+    else
+      erroredBrowsersCount++
+
+  getTestCounts: ->
+    return "Invalid test status" unless @status?.passedCount? and @status?.failedCount?
+    "Number of passed tests: #{@status.passedCount}\nNumber of failed tests: #{@status.failedCount}"
+
+  setSessionId: (sessionId) ->
+    @sessionId = sessionId
+
+  getSauceLabsLink: ->
+    return "Unable to generate SauceLabs link because test did not initialize on SauceLabs." unless @sessionId
+    "Details on SauceLabs: https://saucelabs.com/tests/#{@sessionId}"
+
+  logVerbose: (message) ->
+    console.log "#{@run}: #{message}"
+
+  logLaunch: ->
+    if @tryCount is 1
+      console.log "\nLaunching browser #{@getDescription()}\n".bold.magenta
+    else
+      console.log "\nRelaunching browser #{@getDescription()} (Try #{@tryCount})\n".bold.magenta
 
 http_requests_without_response = 0
 exit_status = null
