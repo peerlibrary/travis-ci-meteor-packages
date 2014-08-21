@@ -1,8 +1,10 @@
+console.log "Running Meteor tests on SauceLabs"
+
 _         = require 'underscore'
 fs        = require 'fs'
 http      = require 'http'
 webdriver = require 'wd'
-wd_sync   = require 'wd-sync'
+wdSync   = require 'wd-sync'
 _when     = require 'when'
 parallel  = require 'when/parallel'
 sequence  = require 'when/sequence'
@@ -62,19 +64,23 @@ class BrowserTestMetaData
     else
       console.log "\nRelaunching browser #{@getDescription()} (Try #{@tryCount})\n".bold.magenta
 
-http_requests_without_response = 0
-exit_status = null
+  logSuccess: ->
+    console.log "\nTest passed in #{@getDescription()}\n#{@getTestCounts()}\n#{@getSauceLabsLink()}\n".bold.green
 
-browser_list_by_status =
-  pass: []
-  fail: []
-  error: []
+  logFailure: ->
+    console.log "\nTest failed in #{@getDescription()}\n#{@getTestCounts()}\n#{@getSauceLabsLink()}\n".bold.red
 
-set_browser_status = (status, run) ->
-  return if _.contains browser_list_by_status[status], run
-  browser_list_by_status[status].push run
+  logError: (error) ->
+    console.log "\nTest errored in #{@getDescription()}\nError: #{error.toString()}\n#{@getSauceLabsLink()}\n".bold.red
 
-read_json_file = (file_path) ->
+  logTimeout: (error) ->
+    console.log "\nTest timed out in #{@getDescription()}\nRetrying...".bold.red
+
+browsersMetaData = {}
+
+# TODO: Output sumarry function
+
+readJsonFile = (file_path) ->
   contents = fs.readFileSync file_path, 'utf-8'
   try
     json = JSON.parse(contents)
@@ -87,25 +93,25 @@ read_json_file = (file_path) ->
 unless process.env.SAUCE_USERNAME and process.env.SAUCE_ACCESS_KEY
   console.log 'SAUCE_USERNAME and SAUCE_ACCESS_KEY environment variables are required'
   process.exit 1
-sauce_key =
+saucelabsCredentials =
   username: process.env.SAUCE_USERNAME
   apikey: process.env.SAUCE_ACCESS_KEY
 
-test_config_file = process.argv[2]
-unless test_config_file?
+testConfigFile = process.argv[2]
+unless testConfigFile?
   console.log 'specify the saucelabs test config JSON file on the command line'
   process.exit 1
-test_config = read_json_file test_config_file
+testConfig = readJsonFile testConfigFile
 
 url = process.argv[3]
 unless url?
   console.log 'specify the Meteor tinytest application URL'
   process.exit 1
 
-_set_saucelabs_test_data = (config, jobid, data, cb) ->
+_setSaucelabsTestData = (config, jobid, data, cb) ->
   body = new Buffer(JSON.stringify(data))
 
-  http_requests_without_response++
+  httpRequestsWithoutResponse++
   req = http.request(
     {
       hostname: 'saucelabs.com'
@@ -117,7 +123,7 @@ _set_saucelabs_test_data = (config, jobid, data, cb) ->
         'Content-length': body.length
     },
     ((res) ->
-      http_requests_without_response--
+      httpRequestsWithoutResponse--
       if res.statusCode is 200
         cb(null)
       else
@@ -132,10 +138,10 @@ _set_saucelabs_test_data = (config, jobid, data, cb) ->
   req.write(body)
   req.end()
 
-set_saucelabs_test_data = (session_id, data) ->
+setSaucelabsTestData = (sessionId, data) ->
   result = _when.defer()
   try
-    _set_saucelabs_test_data sauce_key, session_id, data, (err) ->
+    _setSaucelabsTestData saucelabsCredentials, sessionId, data, (err) ->
       if err
         result.reject(err)
       else
@@ -144,21 +150,21 @@ set_saucelabs_test_data = (session_id, data) ->
     result.reject(e)
   result.promise
 
-set_test_status = (session_id, passed) ->
-  set_saucelabs_test_data session_id, {passed}
+setTestStatus = (sessionId, passed) ->
+  setSaucelabsTestData sessionId, {passed}
 
-create_client = ->
-  if test_config.where is 'local'
-    wd_sync.remote(test_config.selenium_server[0], test_config.selenium_server[1])
-  else if test_config.where is 'saucelabs'
-    wd_sync.remote(
+createClient = ->
+  if testConfig.where is 'local'
+    wdSync.remote(testConfig.seleniumServer[0], testConfig.seleniumServer[1])
+  else if testConfig.where is 'saucelabs'
+    wdSync.remote(
       'ondemand.saucelabs.com',
       80,
-      sauce_key.username,
-      sauce_key.apikey
+      saucelabsCredentials.username,
+      saucelabsCredentials.apikey
     )
   else
-    throw new Error 'unknown where in test config: ' + test_config.where
+    throw new Error 'unknown where in test config: ' + testConfig.where
 
 now = -> new Date().getTime()
 
@@ -172,9 +178,9 @@ poll = (timeout, interval, testFn, progressFn) ->
       return null
     else
       progressFn?()
-      wd_sync.sleep interval
+      wdSync.sleep interval
 
-# Run the tests on a single browser selected by `browser_capabilities`,
+# Run the tests on a single browser selected by `browserCapabilities`,
 # which is an object describing which browser / version / operating system
 # we want to run the tests on.
 #
@@ -182,9 +188,9 @@ poll = (timeout, interval, testFn, progressFn) ->
 #  http://code.google.com/p/selenium/wiki/JsonWireProtocol#Capabilities_JSON_Object
 # and
 #  https://saucelabs.com/docs/browsers (select node.js code)
-# for descriptions of what to use in browser_capabilities.
+# for descriptions of what to use in browserCapabilities.
 #
-# `run_tests_on_browser` returns immediately with a promise while the
+# `runTestsOnBrowser` returns immediately with a promise while the
 # tests run asynchronously.  The promise will be resolved when
 # Meteor's test-in-browser finishes running the tests (whether the
 # tests themselves pass *or* fail).  The promise will be rejected if
@@ -192,61 +198,57 @@ poll = (timeout, interval, testFn, progressFn) ->
 # can't start the tests, the tests don't finish within the timeout,
 # etc.
 
-run_tests_on_browser = (run, browser_capabilities) ->
-
+runTestsOnBrowser = (browserMetaData, browserCapabilities) ->
   done = _when.defer()
 
-  log = (args...) ->
-    console.log run, args...
-
-  client = create_client()
+  browserMetaData.logLaunch()
+  client = createClient()
   browser = client.browser
-  browser.on 'status',  (info)       -> log 'status', info
-  browser.on 'command', (meth, path) -> log 'command', meth, path
+  browser.on 'status',  (info)       -> browserMetaData.logVerbose "Status: #{info}"
+  browser.on 'command', (meth, path) -> browserMetaData.logVerbose "Command: #{meth} #{path}"
 
-  log 'launching browser', browser_capabilities
-
-  capabilities = _.extend browser_capabilities,
+  capabilities = _.extend browserCapabilities,
     'max-duration': 120
-    name: test_config.name
+    name: testConfig.name
     'tunnel-identifier': process.env.TRAVIS_JOB_NUMBER
 
   client.sync ->
-    test_status = null
-    session_id = null
+    testStatus = null
+    sessionId = null
     try
-      session_id = browser.init capabilities
+      sessionId = browser.init capabilities
+      browserMetaData.setSessionId sessionId
       browser.setImplicitWaitTimeout 1000
 
       windowHandles = browser.windowHandles()
       if windowHandles.length isnt 1
         throw new Error('expected one window open at this point')
       mainWindowHandle = windowHandles[0]
-      console.log 'mainWindowHandle', mainWindowHandle
+      browserMetaData.logVerbose "mainWindowHandle #{mainWindowHandle}"
 
       browser.get url
 
       ok = poll 10000, 1000, (-> browser.hasElementByCssSelector('.header')),
-        (-> log 'waiting for test-in-browser\'s .header div to appear')
+        (-> browserMetaData.logVerbose 'waiting for test-in-browser\'s .header div to appear')
       throw new Error('test-in-browser .header div not found') unless ok?
 
       userAgent = browser.eval 'navigator.userAgent'
-      log 'userAgent:', userAgent
+      browserMetaData.logVerbose "userAgent: #{userAgent}"
 
       meteor_runtime_config = browser.eval 'window.__meteor_runtime_config__'
       git_commit = meteor_runtime_config?.git_commit
-      log 'git_commit:', git_commit if git_commit?
+      browserMetaData.logVerbose "git_commit: #{git_commit}" if git_commit?
 
-      if test_config.where is 'saucelabs'
+      if testConfig.where is 'saucelabs'
         data = {}
         data['custom-data'] = {userAgent} if userAgent?
         data['build']       = git_commit  if git_commit?
-        set_saucelabs_test_data session_id, data
+        setSaucelabsTestData sessionId, data
 
-      if test_config.windowtest
+      if testConfig.windowtest
         browser.elementById('begin-tests-button').click()
 
-      log 'tests are running'
+      browserMetaData.logVerbose 'tests are running'
 
       result = poll 20000, 1000, (->
         ## TODO Switching focus to another window doesn't appear to work
@@ -262,26 +264,26 @@ run_tests_on_browser = (run, browser_capabilities) ->
           (element.text().search 'S: ') >= 0
 
         if not hasRunning and not hasFailed and hasPassedOnClient and hasPassedOnServer
-          status: 'pass'
+          status: STATUS.PASS
           passedCount: browser.elementsByCssSelector('.succeeded').length
           failedCount: 0
         else if not hasRunning and (hasFailed or not hasPassedOnClient or not hasPassedOnServer)
-          status: 'fail'
+          status: STATUS.FAIL
           passedCount: browser.elementsByCssSelector('.succeeded')?.length or 0
           failedCount: browser.elementsByCssSelector('.failed')?.length or 0
         else
           null
       ), (->
-        log 'waiting for tests to finish'
+        browserMetaData.logVerbose 'waiting for tests to finish'
       )
 
       unless result?
         throw new Error('tests did not complete within timeout')
 
-      test_status = result
+      testStatus = result
     catch e
-      log e['jsonwire-error'] if e['jsonwire-error']?
-      log 'err', e
+      browserMetaData.logVerbose e['jsonwire-error'] if e['jsonwire-error']?
+      browserMetaData.logVerbose "Error: #{e}"
       # Do not continue testing if error occurs. Do not try to set status because it will fail as well.
       done.reject new rerun.RejectError e.message
       return
@@ -289,41 +291,39 @@ run_tests_on_browser = (run, browser_capabilities) ->
     try
       browser.window mainWindowHandle
       clientlog = browser.eval "$('#log').text()"
-      log 'clientlog', clientlog
+      browserMetaData.logVerbose "Clientlog #{clientlog}"
     catch e
-      log 'unable to capture client log:'
-      log e['jsonwire-error'] if e['jsonwire-error']?
-      log e
+      browserMetaData.logVerbose 'Unable to capture client log:'
+      browserMetaData.logVerbose e['jsonwire-error'] if e['jsonwire-error']?
+      browserMetaData.logVerbose e
 
     # Leave the browser open if running tests locally and the test failed.
     # (No point in leaving it open at saucelabs since it will timeout anyway).
-    if test_config.where is 'saucelabs' or test_status
+    if testConfig.where is 'saucelabs' or testStatus
       try
-        log run, 'shutting down the browser'
+        browserMetaData.logVerbose 'Shutting down the browser'
         browser.quit()
       catch e
-        log run, 'unable to quit browser', e
+        browserMetaData.logVerbose "Unable to quit browser #{e}"
 
-    if test_status
-      log run, 'tests passed: ' + test_status.passedCount
-      log run, 'tests failed: ' + test_status.failedCount
-      log run, 'status: ' + test_status.status
+    if testStatus
+      browserMetaData.setStatus testStatus
     else
-      log run, 'invalid test status'
+      browserMetaData.logVerbose 'Invalid test status'
 
-    if test_config.where is 'saucelabs'
-      saucelabs_test_status = test_status and test_status.status is 'pass'
-      log 'setting test status at saucelabs', saucelabs_test_status
-      set_test_status(session_id, saucelabs_test_status)
+    if testConfig.where is 'saucelabs'
+      saucelabsTestStatus = testStatus and testStatus.status is STATUS.PASS
+      browserMetaData.logVerbose 'setting test status at saucelabs', saucelabsTestStatus
+      setTestStatus(sessionId, saucelabsTestStatus)
       .otherwise((reason) ->
-        console.log run, 'failed to set test status at saucelabs:', reason
+        console.log 'failed to set test status at saucelabs:', reason
       )
 
-    if test_status?.status is 'pass'
-      set_browser_status 'pass', run
+    if testStatus?.status is STATUS.PASS
+      browserMetaData.logSuccess()
       done.resolve true
-    else if test_status?.status is 'fail'
-      set_browser_status 'fail', run
+    else if testStatus?.status is STATUS.FAIL
+      browserMetaData.logFailure()
       done.resolve false
     else
       done.reject new rerun.RejectError "Browser test errored on SauceLabs, Run: #{run}"
@@ -343,66 +343,64 @@ group = (n, array) ->
   result
 
 run = 0
-single_browser_timeout = 90 * 1000 # ms
+singleBrowserTimeout = 90 * 1000 # ms
 
 retry = rerun.promise
-gen_task = (browser_caps) ->
+genTask = (browserCapabilities) ->
   ++run
-  thisrun = run + ':'
+  metaData = new BrowserTestMetaData run, browserCapabilities
+  browsersMetaData[run] = metaData
   ->
-    tryCount = 0
-    retry ->
-      tryCount++
-      console.log "#{thisrun} Try #{tryCount}"
-      promise = run_tests_on_browser(thisrun, browser_caps).timeout(single_browser_timeout, "Browser timed out, Run: #{thisrun}")
+    promise = retry ->
+      metaData.increaseTryCount()
+      metaData.logTimeout() if metaData.tryCount > 1
+      runTestsOnBrowser(metaData, browserCapabilities).timeout singleBrowserTimeout, "Browser timed out"
     ,
       retries: 2
       retryTimeout: 100 # ms
       retryFactor: 1
 
-run_browsers_in_parallel = (group) ->
-  tasks = _.map(group, gen_task)
+    promise.catch (error) ->
+      erroredBrowsersCount++
+      metaData.logError error
+
+runBrowsersInParallel = (group) ->
+  tasks = _.map(group, genTask)
   ->
     parallel(tasks).then (result) ->
       _.every result, (e) -> e is true
     ,
       (error) ->
-        console.log "Browser test error: #{error}"
-        indexOfRun = error.toString()?.indexOf 'Run: '
-        if indexOfRun and indexOfRun >= 0
-          run = error.toString().substring indexOfRun + 'Run: '.length
-        else
-          run = 0
-        set_browser_status 'error', run
-        error
+        console.log "Parallel caught error"
+        console.log error
 
-run_groups_in_sequence = (groups) ->
-  tasks = _.map(groups, run_browsers_in_parallel)
+runGroupsInSequence = (groups) ->
+  tasks = _.map(groups, runBrowsersInParallel)
   sequence(tasks).then (result) ->
     result = _.every result, (e) -> e is true
     console.log '\n\n-------- STATISTICS --------'
-    console.log 'Total browsers:   ' + test_config.browsers.length
-    console.log 'Browsers passed:  ' + browser_list_by_status.pass.length
-    console.log 'Browsers failed:  ' + browser_list_by_status.fail.length
-    console.log 'Browsers errored: ' + browser_list_by_status.error.length
+    console.log 'Total browsers:   ' + testConfig.browsers.length
+    console.log 'Browsers passed:  ' + passedBrowsersCount
+    console.log 'Browsers failed:  ' + failedBrowsersCount
+    console.log 'Browsers errored: ' + erroredBrowsersCount
     console.log '----------------------------\n\n'
     if result
-      exit_status = 0
+      exitStatus = 0
       exitIfFinished()
     else
-      exit_status = 1
+      exitStatus = 1
       exitIfFinished()
   ,
     (error) ->
-      console.log 'Browser test error: ' + error
-      exit_status = 2
+      console.log error
+      exitStatus = 2
       exitIfFinished()
 
-number_of_tests_to_run_in_parallel = test_config.parallelTests ? 1
+numberOfTestsToRunInParallel = testConfig.parallelTests ? 1
 
-run_groups_in_sequence(group(number_of_tests_to_run_in_parallel, test_config.browsers))
+runGroupsInSequence(group(numberOfTestsToRunInParallel, testConfig.browsers))
 
 exitIfFinished = ->
-  return if http_requests_without_response or exit_status is null
-  console.log "Exiting with status #{exit_status}"
-  process.exit exit_status
+  return if httpRequestsWithoutResponse or exitStatus is null
+  console.log "Exiting with status #{exitStatus}"
+  process.exit exitStatus
