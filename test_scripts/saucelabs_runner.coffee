@@ -4,12 +4,12 @@ _         = require 'underscore'
 fs        = require 'fs'
 http      = require 'http'
 webdriver = require 'wd'
-wdSync   = require 'wd-sync'
+wdSync    = require 'wd-sync'
 _when     = require 'when'
 parallel  = require 'when/parallel'
 sequence  = require 'when/sequence'
 rerun     = require 'rerun'
-colors    = require 'colors'
+clc       = require 'cli-color'
 
 httpRequestsWithoutResponse = 0
 exitStatus = null
@@ -60,21 +60,21 @@ class BrowserTestMetaData
 
   logLaunch: ->
     if @tryCount is 1
-      console.log "\nLaunching browser #{@getDescription()}\n".bold.magenta
+      console.log clc.white.bold.bgYellow "\nLaunching browser #{@getDescription()}\n"
     else
-      console.log "\nRelaunching browser #{@getDescription()} (Try #{@tryCount})\n".bold.magenta
+      console.log clc.white.bold.bgYellow "\nRelaunching browser #{@getDescription()} (Try #{@tryCount})\n"
 
   logSuccess: ->
-    console.log "\nTest passed in #{@getDescription()}\n#{@getTestCounts()}\n#{@getSauceLabsLink()}\n".bold.green
+    console.log clc.white.bold.bgGreen "\nTest passed in #{@getDescription()}\n#{@getTestCounts()}\n#{@getSauceLabsLink()}\n"
 
   logFailure: ->
-    console.log "\nTest failed in #{@getDescription()}\n#{@getTestCounts()}\n#{@getSauceLabsLink()}\n".bold.red
+    console.log clc.white.bold.bgRed "\nTest failed in #{@getDescription()}\n#{@getTestCounts()}\n#{@getSauceLabsLink()}\n"
 
   logError: (error) ->
-    console.log "\nTest errored in #{@getDescription()}\nError: #{error.toString()}\n#{@getSauceLabsLink()}\n".bold.red
+    console.log clc.white.bold.bgRed "\nTest errored in #{@getDescription()}\nError: #{error.toString()}\n#{@getSauceLabsLink()}\n"
 
   logTimeout: (error) ->
-    console.log "\nTest timed out in #{@getDescription()}\nRetrying...".bold.red
+    console.log clc.white.bold.bgRed "\nTest timed out in #{@getDescription()}\nRetrying..."
 
 browsersMetaData = {}
 

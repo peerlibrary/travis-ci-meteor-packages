@@ -32,9 +32,7 @@ startTesting = (data) ->
 meteor.stdout.on 'data', startTesting
 
 runTestSuite = () ->
-  clientProcess = spawn 'phantomjs', clientArgs
-  clientProcess.stdout.pipe process.stdout
-  clientProcess.stderr.pipe process.stderr
+  clientProcess = spawn 'phantomjs', clientArgs, stdio: 'inherit'
 
   clientProcess.on 'close', (code) ->
     console.log "Stopping Meteor"

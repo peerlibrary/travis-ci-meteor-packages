@@ -20,9 +20,7 @@ testsToRun = [
 start = (script) ->
   done = _when.defer()
 
-  scriptProcess = spawn 'coffee', [script]
-  scriptProcess.stdout.pipe process.stdout
-  scriptProcess.stderr.pipe process.stderr
+  scriptProcess = spawn 'coffee', [script], stdio: 'inherit'
 
   scriptProcess.on 'close', (code) ->
     console.log "Script process exited with code #{code}"
