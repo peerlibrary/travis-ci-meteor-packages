@@ -393,8 +393,8 @@ genTask = (browserCapabilities) ->
       metaData.logTimeout() if metaData.tryCount > 1
       runTestsOnBrowser(metaData, browserCapabilities).timeout singleBrowserTimeout, "Browser timed out"
     ,
-      retries: 2
-      retryTimeout: 100 # ms
+      retries: 3
+      retryTimeout: 20 * 1000 # ms
       retryFactor: 1
 
     promise.catch (error) ->
