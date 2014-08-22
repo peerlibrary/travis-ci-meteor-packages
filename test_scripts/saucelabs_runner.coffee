@@ -19,6 +19,7 @@ erroredBrowsersCount = 0
 STATUS =
   PASS: 'pass'
   FAIL: 'fail'
+  ERROR: 'error'
 
 class BrowserTestMetaData
   constructor: (run, browserCapabilities) ->
@@ -46,7 +47,7 @@ class BrowserTestMetaData
 
   getTestCounts: ->
     return "Invalid test status" unless @status?.passedCount? and @status?.failedCount?
-    "Number of passed tests: #{@status.passedCount}\nNumber of failed tests: #{@status.failedCount}"
+    "#{@status.passedCount} tests passed, #{@status.failedCount} tests failed"
 
   setSessionId: (sessionId) ->
     @sessionId = sessionId
@@ -60,25 +61,23 @@ class BrowserTestMetaData
 
   logLaunch: ->
     if @tryCount is 1
-      console.log clc.white.bold.bgYellow "\nLaunching browser #{@getDescription()}\n"
+      console.log clc.whiteBright.bold.bgYellow "\n## Launching browser #{@getDescription()}\n"
     else
-      console.log clc.white.bold.bgYellow "\nRelaunching browser #{@getDescription()} (Try #{@tryCount})\n"
+      console.log clc.whiteBright.bold.bgYellow "\n## Relaunching browser #{@getDescription()} (Try #{@tryCount})\n"
 
   logSuccess: ->
-    console.log clc.white.bold.bgGreen "\nTest passed in #{@getDescription()}\n#{@getTestCounts()}\n#{@getSauceLabsLink()}\n"
+    console.log clc.whiteBright.bold.bgGreen "\n## Test passed in #{@getDescription()}\n## #{@getTestCounts()}\n## #{@getSauceLabsLink()}\n"
 
   logFailure: ->
-    console.log clc.white.bold.bgRed "\nTest failed in #{@getDescription()}\n#{@getTestCounts()}\n#{@getSauceLabsLink()}\n"
+    console.log clc.whiteBright.bold.bgRed "\n## Test failed in #{@getDescription()}\n## #{@getTestCounts()}\n## #{@getSauceLabsLink()}\n"
 
   logError: (error) ->
-    console.log clc.white.bold.bgRed "\nTest errored in #{@getDescription()}\nError: #{error.toString()}\n#{@getSauceLabsLink()}\n"
+    console.log clc.whiteBright.bold.bgRed "\n## Test errored in #{@getDescription()}\n## Error: #{error.toString()}\n## #{@getSauceLabsLink()}\n"
 
   logTimeout: (error) ->
-    console.log clc.white.bold.bgRed "\nTest timed out in #{@getDescription()}\nRetrying..."
+    console.log clc.whiteBright.bold.bgRed "\n## Test timed out in #{@getDescription()}\n## Retrying..."
 
 browsersMetaData = {}
-
-# TODO: Output sumarry function
 
 readJsonFile = (file_path) ->
   contents = fs.readFileSync file_path, 'utf-8'
@@ -251,6 +250,11 @@ runTestsOnBrowser = (browserMetaData, browserCapabilities) ->
       browserMetaData.logVerbose 'tests are running'
 
       result = poll 20000, 1000, (->
+        clientTestFilter = (element) ->
+          (element.text().search 'C: ') >= 0
+        serverTestFilter = (element) ->
+          (element.text().search 'S: ') >= 0
+
         ## TODO Switching focus to another window doesn't appear to work
         ## with Opera.
         browser.window mainWindowHandle
@@ -258,18 +262,20 @@ runTestsOnBrowser = (browserMetaData, browserCapabilities) ->
         hasRunning = browser.hasElementByCssSelector('.running')
         hasFailed = browser.hasElementByCssSelector('.failed')
         hasPassed = browser.hasElementByCssSelector('.succeeded')
-        hasPassedOnClient = _.some browser.elementsByCssSelector('.succeeded'), (element) ->
-          (element.text().search 'C: ') >= 0
-        hasPassedOnServer = _.some browser.elementsByCssSelector('.succeeded'), (element) ->
-          (element.text().search 'S: ') >= 0
+        hasPassedOnClient = _.some browser.elementsByCssSelector('.succeeded'), clientTestFilter
+        hasPassedOnServer = _.some browser.elementsByCssSelector('.succeeded'), serverTestFilter
 
         if not hasRunning and not hasFailed and hasPassedOnClient and hasPassedOnServer
           status: STATUS.PASS
           passedCount: browser.elementsByCssSelector('.succeeded').length
+          clientPassedCount: _.countBy(browser.elementsByCssSelector('.succeeded'), clientTestFilter).true
+          serverPassedCount: _.countBy(browser.elementsByCssSelector('.succeeded'), serverTestFilter).true
           failedCount: 0
         else if not hasRunning and (hasFailed or not hasPassedOnClient or not hasPassedOnServer)
           status: STATUS.FAIL
           passedCount: browser.elementsByCssSelector('.succeeded')?.length or 0
+          clientPassedCount: _.countBy(browser.elementsByCssSelector('.succeeded'), clientTestFilter).true
+          serverPassedCount: _.countBy(browser.elementsByCssSelector('.succeeded'), serverTestFilter).true
           failedCount: browser.elementsByCssSelector('.failed')?.length or 0
         else
           null
@@ -330,6 +336,37 @@ runTestsOnBrowser = (browserMetaData, browserCapabilities) ->
 
   done.promise
 
+outputSummary = ->
+  console.log clc.bold "\n\n\n================ SUMMARY ================"
+  console.log clc.bold "  Total browsers tested: #{testConfig.browsers.length}"
+  console.log clc.bold "  Browsers passed: #{passedBrowsersCount}"
+  console.log clc.bold "  Browsers failed: #{failedBrowsersCount}"
+  console.log clc.bold "  Browsers errored: #{erroredBrowsersCount}"
+
+  if failedBrowsersCount
+    console.log clc.bold "\n  FAILED TESTS:"
+    for run, browser of browsersMetaData
+      continue unless browser.status?.status is STATUS.FAIL
+      console.log "    Browser: #{browser.getDescription()}"
+      console.log "    Total tests ran:  #{browser.status.passedCount + browser.status.failedCount}"
+      console.log "    Total tests passed: #{browser.status.passedCount}"
+      console.log "    Tests passed on client: #{browser.status.clientPassedCount}"
+      console.log "    Tests passed on server: #{browser.status.serverPassedCount}"
+      console.log "    Total tests failed: #{browser.status.failedCount}"
+      console.log "    #{browser.getSauceLabsLink()}\n"
+
+  if erroredBrowsersCount
+    console.log clc.bold "\n  ERRORED TESTS:"
+    for run, browser of browsersMetaData
+      unless browser.status?
+        console.log "    #{browser.getDescription()}"
+        console.log "    Unknown error"
+        console.log "    #{browser.getSauceLabsLink()}\n"
+      if browser.status?.status is STATUS.ERROR
+        console.log "    #{browser.getDescription()}"
+        console.log "    Error details: #{browser.status.errorDetails}"
+        console.log "    #{browser.getSauceLabsLink()}\n"
+  console.log clc.bold "=========================================\n\n"
 
 # group(3, [1, 2, 3, 4, 5, 6, 7, 8]) => [[1, 2, 3], [4, 5, 6], [7, 8]]
 
@@ -361,7 +398,9 @@ genTask = (browserCapabilities) ->
       retryFactor: 1
 
     promise.catch (error) ->
-      erroredBrowsersCount++
+      metaData.setStatus
+        status: STATUS.ERROR
+        errorDetails: error.toString()
       metaData.logError error
 
 runBrowsersInParallel = (group) ->
@@ -378,12 +417,7 @@ runGroupsInSequence = (groups) ->
   tasks = _.map(groups, runBrowsersInParallel)
   sequence(tasks).then (result) ->
     result = _.every result, (e) -> e is true
-    console.log '\n\n-------- STATISTICS --------'
-    console.log 'Total browsers:   ' + testConfig.browsers.length
-    console.log 'Browsers passed:  ' + passedBrowsersCount
-    console.log 'Browsers failed:  ' + failedBrowsersCount
-    console.log 'Browsers errored: ' + erroredBrowsersCount
-    console.log '----------------------------\n\n'
+    outputSummary()
     if result
       exitStatus = 0
       exitIfFinished()
