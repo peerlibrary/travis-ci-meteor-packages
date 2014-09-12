@@ -14,7 +14,7 @@ if (!process.env.PACKAGES) {
   serverArgs = serverArgs.concat(process.env.PACKAGES.split(';'));
 }
 
-var clientArgs = ['./' + process.env.TEST_SCRIPTS_DIR + '/saucelabs_runner.coffee',
+var clientArgs = ['./' + process.env.TEST_SCRIPTS_DIR + '/saucelabs_runner.js',
                   '.saucelabs_config.json', 'http://localhost:3000'];
 
 var meteor = spawn(process.env.TEST_COMMAND || 'mrt', serverArgs, {cwd: workingDir});
@@ -36,7 +36,7 @@ meteor.stdout.on('data', function startTesting (data) {
 });
 
 var runTestSuite = function () {
-  clientProcess = spawn('coffee', clientArgs, {stdio: 'inherit'});
+  clientProcess = spawn('node', clientArgs, {stdio: 'inherit'});
 
   clientProcess.on('close', function (code) {
     console.log("Stopping Meteor");
