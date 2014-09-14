@@ -175,33 +175,33 @@ var BrowserTest = (function () {
 
   BrowserTest.prototype.logLaunch = function () {
     if (this.tryCount === 1) {
-      console.log(clc.whiteBright.bold.bgYellow("\n## Launching browser " + this.getDescription() + "\n"));
+      console.log("\n" + clc.whiteBright.bold.bgMagenta("## Launching browser " + this.getDescription() + "\n"));
     } else {
-      console.log(clc.whiteBright.bold.bgYellow("\n## Relaunching browser " + this.getDescription() + " (Try " + this.tryCount + ")\n"));
+      console.log("\n" + clc.whiteBright.bold.bgMagenta("## Relaunching browser " + this.getDescription() + " (Try " + this.tryCount + ")\n"));
     }
   }
 
   BrowserTest.prototype.logSuccess = function () {
-    console.log(clc.whiteBright.bold.bgGreen("\n## Test passed in " + this.getDescription()));
+    console.log("\n" + clc.whiteBright.bold.bgGreen("## Test passed in " + this.getDescription()));
     console.log(clc.whiteBright.bold.bgGreen("## " + this.getTestCounts()));
     console.log(clc.whiteBright.bold.bgGreen("## " + this.getTestDetailsLink() + "\n"));
   }
 
   BrowserTest.prototype.logFailure = function() {
-    console.log(clc.whiteBright.bold.bgRed("\n## Test failed in " + this.getDescription()));
+    console.log("\n" + clc.whiteBright.bold.bgRed("## Test failed in " + this.getDescription()));
     console.log(clc.whiteBright.bold.bgRed("## " + this.getTestCounts()));
     console.log(clc.whiteBright.bold.bgRed("## " + this.getTestDetailsLink() + "\n"));
   }
 
   BrowserTest.prototype.logError = function(error) {
-    console.log(clc.whiteBright.bold.bgRed("\n## Test errored in " + this.getDescription()));
+    console.log("\n" + clc.whiteBright.bold.bgRed("## Test errored in " + this.getDescription()));
     console.log(clc.whiteBright.bold.bgRed("## Error: " + error.toString()));
     console.log(clc.whiteBright.bold.bgRed("## " + this.getTestDetailsLink() + "\n"));
   }
 
   BrowserTest.prototype.logTimeout = function(error) {
-    console.log(clc.whiteBright.bold.bgRed("\n## Test timed out in " + this.getDescription()));
-    console.log(clc.whiteBright.bold.bgRed("\n## Retrying...\n"));
+    console.log("\n" + clc.whiteBright.bold.bgRed("## Test timed out in " + this.getDescription()));
+    console.log(clc.whiteBright.bold.bgRed("## Retrying...\n"));
   }
 
   // Test implementation
@@ -473,14 +473,14 @@ sequence(tasks).then(function (result) {
 });
 
 var outputSummary = function() {
-  console.log(clc.bold("\n\n\n================ SUMMARY ================"));
+  console.log("\n\n\n" + clc.bold("================ SUMMARY ================"));
   console.log(clc.bold("  Total browsers tested: " + testConfig.browsers.length));
   console.log(clc.bold("  Browsers passed: " + passedBrowsersCount));
   console.log(clc.bold("  Browsers failed: " + failedBrowsersCount));
   console.log(clc.bold("  Browsers errored: " + erroredBrowsersCount));
 
   if (failedBrowsersCount > 0) {
-    console.log(clc.bold("\n  FAILED TESTS:"));
+    console.log("\n" + clc.bold("  FAILED TESTS:"));
     for (var run in browserTests) {
       var browserTest = browserTests[run];
       if (browserTest.isFailed()) {
@@ -496,7 +496,7 @@ var outputSummary = function() {
   }
 
   if (erroredBrowsersCount > 0) {
-    console.log(clc.bold("\n  ERRORED TESTS:"));
+    console.log("\n" + clc.bold("  ERRORED TESTS:"));
     for (var run in browserTests) {
       var browserTest = browserTests[run];
       if (browserTest.isErrored()) {
