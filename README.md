@@ -32,15 +32,13 @@ Configure browsers you want to run tests on in `.saucelabs_config.json` file. It
 ```
 {
   "name": "Your test name",
-  "where": "saucelabs",
-  "parallelTests": 1,
   "browsers": [
     { "browserName": "chrome", "version": "26", "platform": "Windows 7" },
     { "browserName": "chrome", "version": "36", "platform": "Windows 7" },
     { "browserName": "chrome", "version": "beta", "platform": "Windows 7" },
     { "browserName": "firefox", "version": "15", "platform": "Windows 7" },
     { "browserName": "firefox", "version": "30", "platform": "Windows 7" },
-    { "browserName": "firefox", "version": "31", "platform": "Windows 7" },
+    { "browserName": "firefox", "version": "31", "platform": "Windows 7" }
   ]
 }
 ```
@@ -55,17 +53,22 @@ Update `.travis.yml` file like this:
     before_install:
       - curl https://raw.githubusercontent.com/peerlibrary/travis-ci-meteor-packages/saucelabs/configure.sh | /bin/sh
     script:
-      - coffee start_test.coffee
+      - node start_test.js
     env:
       global:
       - secure: "Secure username token goes here!"
       - secure: "Secure access key token goes here!"
       - TEST_ON_PHANTOMJS=1
       - TEST_ON_SAUCELABS=1
+      - SAUCELABS_REQUIRE_SERVER_TEST=1
+      - SAUCELABS_REQUIRE_CLIENT_TEST=1
     addons:
       sauce_connect: true
 
 Sauce Connect is an addon for Travis which opens secure tunnel to SauceLabs so that remote browsers can access your app through localhost.
 There are also two additional environment variables:
- * `TEST_ON_PHANTOMJS` - PhantomJS tests will run if set to 1
- * `TEST_ON_SAUCELABS` - SauceLabs tests will run if set to 1
+ * `TEST_ON_PHANTOMJS` - PhantomJS tests will run if set to 1 (default 1)
+ * `TEST_ON_SAUCELABS` - SauceLabs tests will run if set to 1 (default 0)
+ * `SAUCELABS_REQUIRE_SERVER_TEST` - If set to 1 browser test will be considered failed if there was not at least one successful test on server side (default 0)
+ * `SAUCELABS_REQUIRE_CLIENT_TEST` - If set to 1 browser test will be considered failed if there was not at least one successful test on client side (default 1)
+
