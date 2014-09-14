@@ -29,6 +29,7 @@ var SauceLabs = {
   apikey: null,
 
   createClient: function () {
+    if (!this.username || !this.apikey) throw new Error("User credentials not set");
     return wdSync.remote(
       'ondemand.saucelabs.com',
       80,
@@ -38,11 +39,13 @@ var SauceLabs = {
   },
 
   setTestResult: function (sessionId, isPassed) {
+    if (!this.username || !this.apikey) throw new Error("User credentials not set");
+    if (!sessionId) throw new Error("Session ID not set");
     var result = _when.defer();
 
+    httpRequestsWithoutResponse++;
     try {
-      var body = new Buffer(JSON.stringify({data: isPassed}));
-      httpRequestsWithoutResponse++;
+      var body = new Buffer(JSON.stringify({passed: isPassed}));
 
       var request = http.request({
         hostname: 'saucelabs.com',
@@ -56,18 +59,22 @@ var SauceLabs = {
         if (response.statusCode === 200) {
           result.resolve();
         } else {
-          result.reject('http status code ' + result.statusCode);
+          result.reject('Http status code ' + response.statusCode);
         }
         exitIfFinished();
       });
 
       request.on('error', function (error) {
+        httpRequestsWithoutResponse--;
         result.reject(error);
+        exitIfFinished();
       });
 
       request.write(body);
       request.end();
     } catch (error) {
+      httpRequestsWithoutResponse--;
+      exitIfFinished();
       result.reject(error);
     }
 
@@ -103,15 +110,42 @@ var BrowserTest = (function () {
     if (this.testResult)
       return; // Do not allow overriding existing test result
 
+    var reportAPIError = function (error) {
+      this.logVerbose("Error setting test status on SauceLabs: " + error.toString());
+    }
+
     this.testResult = testResult;
     if (this.testResult && this.testResult.status === STATUS.PASS) {
       passedBrowsersCount++;
-      SauceLabs.setTestResult(this.sessionId, true);
+      this.logVerbose("Setting test status on SauceLabs");
+      SauceLabs.setTestResult(this.sessionId, true).catch(reportAPIError);
     } else if (this.testResult && this.testResult.status === STATUS.FAIL) {
       failedBrowsersCount++;
-      SauceLabs.setTestResult(this.sessionId, false);
+      this.logVerbose("Setting test status on SauceLabs");
+      SauceLabs.setTestResult(this.sessionId, false).catch(reportAPIError);
     } else {
       erroredBrowsersCount++;
+    }
+  }
+
+  BrowserTest.prototype.isPassed = function () {
+    return this.testResult && this.testResult.status === STATUS.PASS;
+  }
+
+  BrowserTest.prototype.isFailed = function() {
+    return this.testResult && this.testResult.status === STATUS.FAIL;
+  }
+
+  BrowserTest.prototype.isErrored = function() {
+    return !this.testResult || !this.testResult.status || this.testResult.status === STATUS.ERROR ||
+           this.testResult.status !== STATUS.PASS && this.testResult.status !== STATUS.FAIL;
+  }
+
+  BrowserTest.prototype.getErrorDetails = function() {
+    if (this.testResult && this.testResult.errorDetails ) {
+      return this.testResult.errorDetails;
+    } else {
+      return "Unknown error";
     }
   }
 
@@ -122,7 +156,7 @@ var BrowserTest = (function () {
       return this.testResult.passedCount + " tests passed, " +
              this.testResult.failedCount + " tests failed"
     } else {
-      return "Invalid test status"
+      return "Invalid test status";
     }
   }
 
@@ -149,7 +183,7 @@ var BrowserTest = (function () {
 
   BrowserTest.prototype.logSuccess = function () {
     console.log(clc.whiteBright.bold.bgGreen("\n## Test passed in " + this.getDescription()));
-    conosle.log(clc.whiteBright.bold.bgGreen("## " + this.getTestCounts()));
+    console.log(clc.whiteBright.bold.bgGreen("## " + this.getTestCounts()));
     console.log(clc.whiteBright.bold.bgGreen("## " + this.getTestDetailsLink() + "\n"));
   }
 
@@ -217,15 +251,13 @@ var BrowserTest = (function () {
     this.logLaunch();
     var client = this.createClient();
     var browser = client.browser;
-    var browserTest = this;
-
-    // TODO: extend browser capabilities (max-duration, name, tunnel identifier)
+    var self = this;
 
     client.sync(function () {
       var testStatus = null;
       try {
         // Initiate browser
-        browserTest.sessionId = browser.init(browserTest.browserCapabilities);
+        self.sessionId = browser.init(self.browserCapabilities);
         browser.setImplicitWaitTimeout(1000);
 
         // Get main (and only) browser window
@@ -236,24 +268,24 @@ var BrowserTest = (function () {
         // Load test URL in browser
         browser.get(url);
 
-        // Wait for header to appear. When it does, tests are running.
+        // Wait for test table to appear. When it does, tests are running.
         var ok = poll({
           timeout: 10000,
           interval: 1000,
-          progressFunction: function() {
-            return browser.hasElementByCssSelector('.header');
-          },
           testFunction: function() {
-            browserTest.logVerbose("Waiting for .header div to appear");
+            return browser.hasElementByCssSelector('.test_table');
+          },
+          progressFunction: function() {
+            self.logVerbose("Waiting for .test_table div to appear");
           }
         });
-        browserTest.logVerbose("Tests are running");
+        self.logVerbose("Tests are running");
 
         // Check test results
         result = poll({
-          timeout: 20000,
+          timeout: 40000,
           interval: 1000,
-          progressFunction: function() {
+          testFunction: function() {
             clientTestFilter = function (element) {
               return element.text().search('C: ') >= 0;
             }
@@ -267,20 +299,14 @@ var BrowserTest = (function () {
             // Check status divs
             var runningCount = browser.elementsByCssSelector('.running').length;
             var failedCount = browser.elementsByCssSelector('.failed').length;
-            var passedCount = browser.elementsByCssSelector('.passed').length;
+            var passedCount = browser.elementsByCssSelector('.succeeded').length;
             var clientPassedCount = _.countBy(browser.elementsByCssSelector('.succeeded'), clientTestFilter).true;
             var serverPassedCount = _.countBy(browser.elementsByCssSelector('.succeeded'), serverTestFilter).true;
 
-            console.log(runningCount);
-            console.log(failedCount);
-            console.log(passedCount);
-            console.log(clientPassedCount);
-            console.log(serverPassedCount);
-
             // Determine test status
             if (runningCount == 0 && failedCount == 0 && passedCount > 0 &&
-                clientPassedCount >= browserTest.minimumPassedTestsOnClientRequired &&
-                serverPassedCount >= browserTest.minimumPassedTestsOnServerRequired) {
+                clientPassedCount >= self.minimumPassedTestsOnClientRequired &&
+                serverPassedCount >= self.minimumPassedTestsOnServerRequired) {
               return {
                 status: STATUS.PASS,
                 passedCount: passedCount,
@@ -289,11 +315,9 @@ var BrowserTest = (function () {
                 failedCount: 0
               };
             }
-            else if (runningCount == 0 && (failedCount > 0 || passedCount == 0 ||
-                                           clientPassedCount < browserTest.minimumPassedTestsOnClientRequired ||
-                                           serverPassedCount < browserTest.minimumPassedTestsOnServerRequired)) {
+            else if (runningCount == 0) {
               return {
-                status: STATUS.FAILED,
+                status: STATUS.FAIL,
                 passedCount: passedCount,
                 clientPassedCount: clientPassedCount,
                 serverPassedCount: serverPassedCount,
@@ -304,37 +328,42 @@ var BrowserTest = (function () {
               return null;
             }
           },
-          testFunction: function() {
-            browserTest.logVerbose("Waiting for tests to finish...");
+          progressFunction: function() {
+            self.logVerbose("Waiting for tests to finish...");
           }
         });
 
-        if (!result)
+        if (!result) {
           throw new Error("Tests did not complete within timeout.");
+        }
       } catch (error) {
-        browserTest.logVerbose("Error: " + error);
+        self.logVerbose("Error: " + error);
         // Do not continue testing if error occurs. Do not try to set status because it will fail as well.
+        self.setTestResult({
+          status: STATUS.ERROR,
+          errorDetails: error.message || error.toString()
+        });
         done.reject(new rerun.RejectError(error.message));
         return;
       }
 
       // Shut down browser
       try {
-        browserTest.logVerbose("Shutting down the browser");
+        self.logVerbose("Shutting down the browser");
         browser.quit();
       } catch (error) {
-        browserTest.logVerbose("Unable to shut down browser. Error " + error);
+        self.logVerbose("Unable to shut down browser. Error " + error);
       }
 
       // Set test result
-      browserTest.setTestResult(result);
+      self.setTestResult(result);
 
       // Log status and resolve
-      if (result.status === STATUS.PASS) {
-        browserTest.logSuccess();
+      if (self.isPassed()) {
+        self.logSuccess();
         done.resolve(true);
-      } else if (result.status === STATUS.FAIL) {
-        browserTest.logFailure();
+      } else if (self.isFailed()) {
+        self.logFailure();
         done.resolve(false);
       } else {
         done.reject(new rerun.RejectError("Browser test errored on SauceLabs"));
@@ -346,6 +375,8 @@ var BrowserTest = (function () {
 
   return BrowserTest;
 })();
+// Each test will be stored in this array. That way we can easily summarize data at the end.
+var browserTests = [];
 
 var readJsonFile = function (filePath) {
   var contents = fs.readFileSync(filePath, 'utf-8');
@@ -398,9 +429,9 @@ var genTask = function (browserCapabilities) {
     'tunnel-identifier': process.env.TRAVIS_JOB_NUMBER
   });
   var browserTest = new BrowserTest(browserCapabilities, minimumRequiredClientTests, minimumRequiredServerTests);
+  browserTests.push(browserTest);
   return function () {
     var promise = retry(function() {
-      console.log("Calling retry function");
       browserTest.increaseTryCount();
       if (browserTest.getTryCount() > 1) browserTest.logTimeout();
       return browserTest.runTests().timeout(singleBrowserTimeout, "Browser timed out.");
@@ -411,6 +442,7 @@ var genTask = function (browserCapabilities) {
     });
 
     return promise.catch(function (error) {
+      console.log("Try caught error: " + error);
       browserTest.setTestResult({
         status: STATUS.ERROR,
         errorDetails: error.toString()
@@ -426,7 +458,7 @@ var tasks = _.map(testConfig.browsers, genTask);
 // Execute tasks from task list in sequence
 sequence(tasks).then(function (result) {
   var result = _.every(result, function (element) { return element === true });
-  // TODO: Output summary
+  outputSummary();
   if (result) {
     exitStatus = 0;
     exitIfFinished();
@@ -439,6 +471,44 @@ sequence(tasks).then(function (result) {
   exitStatus = 2;
   exitIfFinished();
 });
+
+var outputSummary = function() {
+  console.log(clc.bold("\n\n\n================ SUMMARY ================"));
+  console.log(clc.bold("  Total browsers tested: " + testConfig.browsers.length));
+  console.log(clc.bold("  Browsers passed: " + passedBrowsersCount));
+  console.log(clc.bold("  Browsers failed: " + failedBrowsersCount));
+  console.log(clc.bold("  Browsers errored: " + erroredBrowsersCount));
+
+  if (failedBrowsersCount > 0) {
+    console.log(clc.bold("\n  FAILED TESTS:"));
+    for (var run in browserTests) {
+      var browserTest = browserTests[run];
+      if (browserTest.isFailed()) {
+        console.log("    Browser: " + browserTest.getDescription())
+        console.log("    Total tests ran: " + (browserTest.testResult.passedCount + browserTest.testResult.failedCount));
+        console.log("    Total tests passed: " + browserTest.testResult.passedCount);
+        console.log("    Tests passed on client: " + browserTest.testResult.clientPassedCount);
+        console.log("    Tests passed on server: " + browserTest.testResult.serverPassedCount);
+        console.log("    Total tests failed: " + browserTest.testResult.failedCount);
+        console.log("    " + browserTest.getTestDetailsLink() + "\n");
+      }
+    }
+  }
+
+  if (erroredBrowsersCount > 0) {
+    console.log(clc.bold("\n  ERRORED TESTS:"));
+    for (var run in browserTests) {
+      var browserTest = browserTests[run];
+      if (browserTest.isErrored()) {
+        console.log("    " + browserTest.getDescription());
+        console.log("    Error details: " + browserTest.getErrorDetails());
+        console.log("    " + browserTest.getTestDetailsLink() + "\n");
+      }
+    }
+  }
+
+  console.log(clc.bold("=========================================\n\n"));
+}
 
 var exitIfFinished = function() {
   if (httpRequestsWithoutResponse > 0 || exitStatus === null) return;
