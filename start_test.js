@@ -1,39 +1,63 @@
 #!/usr/bin/env node
+
 var spawn = require('child_process').spawn;
+var _ = require('underscore');
+var _when = require('when');
+var sequence = require('when/sequence');
 
-var workingDir = process.env.WORKING_DIR || process.env.PACKAGE_DIR || './';
-var args = ['test-packages', '--once', '--driver-package', 'test-in-console', '-p', 10015];
-if (typeof process.env.PACKAGES === 'undefined') {
-  args.push('./');
-}
-else if (process.env.PACKAGES !== '') {
-  args = args.concat(process.env.PACKAGES.split(';'));
-}
-var meteor = spawn((process.env.TEST_COMMAND || 'mrt'), args, {cwd: workingDir});
-meteor.stdout.pipe(process.stdout);
-meteor.stderr.pipe(process.stderr);
-meteor.on('close', function (code) {
-  console.log('mrt exited with code ' + code);
-  process.exit(code);
-});
+// Default values for environment variables
+if (!process.env.TEST_SCRIPTS_DIR) process.env.TEST_SCRIPTS_DIR = './.test_scripts';
+if (!process.env.TEST_ON_PHANTOMJS) process.env.TEST_ON_PHANTOMJS = '1';
+if (!process.env.TEST_ON_SAUCELABS) process.env.TEST_ON_SAUCELABS = '0';
 
-meteor.stdout.on('data', function startTesting(data) {
-  var data = data.toString();
-  if(data.match(/10015|test-in-console listening/)) {
-    console.log('starting testing...');
-    meteor.stdout.removeListener('data', startTesting);
-    runTestSuite();
-  } 
-});
+// Tests are defined here
+var testsToRun = [{
+  script: 'phantom_wrapper.js',
+  enabled: process.env.TEST_ON_PHANTOMJS == '1'
+}, {
+  script: 'saucelabs_wrapper.js',
+  enabled: process.env.TEST_ON_SAUCELABS == '1'
+}];
 
-function runTestSuite() {
-  process.env.URL = "http://localhost:10015/"
-  var phantomjs = spawn('phantomjs', ['./phantom_runner.js']);
-  phantomjs.stdout.pipe(process.stdout);
-  phantomjs.stderr.pipe(process.stderr);
+var start = function (script) {
+  var done = _when.defer();
 
-  phantomjs.on('close', function(code) {
-    meteor.kill('SIGQUIT');
-    process.exit(code);
+  var scriptProcess = spawn('node', [script], {stdio: 'inherit'});
+
+  scriptProcess.on('close', function (code) {
+    console.log("Script process exited with code " + code);
+    done.resolve(code === 0);
   });
+
+  scriptProcess.on('error', function (error) {
+    console.log("Script errored: " + error.toString());
+    done.reject();
+  });
+
+  return done.promise
 }
+
+var genTask = function (script) {
+  return function () {
+    return start(process.env.TEST_SCRIPTS_DIR + '/' + script);
+  }
+}
+
+var tasks = testsToRun.map(function (test) {
+  if (test.enabled) {
+    return genTask(test.script);
+  }
+}).filter(_.isFunction);
+
+sequence(tasks).then(function (results) {
+  if (_.every(results)) {
+    console.log("All tests passed, exiting with status 0");
+    process.exit(0);
+  } else {
+    console.log("Some tests failed, exiting with status 1");
+    process.exit(1);
+  }
+}, function (error) {
+  console.log("Got error from tests script: " + error);
+  process.exit(1);
+});
