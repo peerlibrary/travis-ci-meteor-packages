@@ -1,3 +1,3 @@
 test: 
-	coffee start_test.coffee
+	node start_test.js
 .PHONY: test
